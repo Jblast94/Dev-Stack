@@ -256,6 +256,64 @@ services:
       - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
     restart: unless-stopped
 
+  # Llama.cpp Server for Orpheus model inference
+  llama-cpp:
+    image: ghcr.io/ggerganov/llama.cpp:server
+    container_name: llama-cpp
+    networks:
+      - traefik-public
+    volumes:
+      - ./models:/models
+    command: >
+      -m /models/Orpheus-3b-FT-Q4_K_M.gguf
+      --ctx-size 8192
+      --n-predict 8192
+      --rope-scaling linear
+      --host 0.0.0.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.llama-cpp.rule=Host(`llm-server.myn8n.art`)"
+      - "traefik.http.routers.llama-cpp.entrypoints=websecure"
+      - "traefik.http.routers.llama-cpp.tls.certresolver=myresolver"
+      - "traefik.http.services.llama-cpp.loadbalancer.server.port=8080"
+    restart: unless-stopped
+
+  # Orpheus TTS Service
+  orpheus-tts:
+    build: ./Orpheus-FastAPI
+    container_name: orpheus-tts
+    networks:
+      - traefik-public
+    volumes:
+      - ./Orpheus-FastAPI/outputs:/app/outputs
+    environment:
+      - ORPHEUS_API_URL=http://llama-cpp:8080/v1/completions
+      - ORPHEUS_MAX_TOKENS=8192
+      - ORPHEUS_API_TIMEOUT=120
+      - ORPHEUS_TEMPERATURE=0.6
+      - ORPHEUS_TOP_P=0.9
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.orpheus-tts.rule=Host(`tts.myn8n.art`)"
+      - "traefik.http.routers.orpheus-tts.entrypoints=websecure"
+      - "traefik.http.routers.orpheus-tts.tls.certresolver=myresolver"
+      - "traefik.http.services.orpheus-tts.loadbalancer.server.port=5005"
+    restart: unless-stopped
+
 volumes:
   traefik_certificates:
   ollama_data:
